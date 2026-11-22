@@ -49,7 +49,7 @@ export function formatTimeLeft(
     return `${minutes} menit`;
   }
 
-  return 'Kurang dari 1 menit';
+  return 'kurang dari 1 menit';
 }
 
 export function formatDate(value: string | Date): string {

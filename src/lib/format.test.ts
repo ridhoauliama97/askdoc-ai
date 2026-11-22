@@ -29,6 +29,12 @@ describe('formatTimeLeft', () => {
       formatTimeLeft('2026-11-23T11:30:00Z', new Date('2026-11-22T10:00:00Z')),
     ).toBe('25 jam 30 menit');
   });
+
+  it('returns lowercase "kurang dari 1 menit" under a minute', () => {
+    expect(
+      formatTimeLeft('2026-11-22T10:00:30Z', new Date('2026-11-22T10:00:00Z')),
+    ).toBe('kurang dari 1 menit');
+  });
 });
 
 describe('formatDate', () => {

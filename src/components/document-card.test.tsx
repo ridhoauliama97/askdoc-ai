@@ -40,4 +40,23 @@ describe('DocumentCard', () => {
 
     expect(screen.queryByText(/halaman/)).not.toBeInTheDocument();
   });
+
+  it('shows a note that processing will start after upload', () => {
+    render(
+      <DocumentCard document={{ ...document, status: 'awaiting_upload' }} />,
+    );
+
+    expect(
+      screen.getByText('Pemrosesan akan dimulai sebentar lagi.'),
+    ).toBeInTheDocument();
+  });
+
+  it('lowercases the countdown when less than a minute is left', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T12:29:30.000Z'));
+
+    render(<DocumentCard document={document} />);
+
+    expect(screen.getByText('Sisa kurang dari 1 menit')).toBeInTheDocument();
+  });
 });

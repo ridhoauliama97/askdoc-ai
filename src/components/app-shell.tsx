@@ -13,19 +13,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import type { DocumentListItem } from '@/lib/types';
+import { useDocuments } from '@/hooks/use-documents';
 
-type AppShellProps = {
-  documents?: DocumentListItem[];
-  isLoading?: boolean;
-};
-
-export function AppShell({
-  documents = [],
-  isLoading = false,
-}: AppShellProps) {
+export function AppShell() {
+  const { documents, loading, error, refresh, uploadPdf } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const selectedDocument =
     documents.find((document) => document.id === selectedId) ?? null;
@@ -33,6 +27,21 @@ export function AppShell({
   function selectDocument(id: string) {
     setSelectedId(id);
     setIsSidebarOpen(false);
+  }
+
+  async function handleUpload(file: File) {
+    setIsUploading(true);
+
+    try {
+      const documentId = await uploadPdf(file);
+
+      if (documentId) {
+        setSelectedId(documentId);
+        setIsSidebarOpen(false);
+      }
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -63,7 +72,11 @@ export function AppShell({
               documents={documents}
               selectedId={selectedId}
               onSelect={selectDocument}
-              isLoading={isLoading}
+              onUpload={handleUpload}
+              isLoading={loading}
+              isUploading={isUploading}
+              error={error}
+              onRetry={() => void refresh()}
             />
           </SheetContent>
         </Sheet>
@@ -82,7 +95,11 @@ export function AppShell({
             documents={documents}
             selectedId={selectedId}
             onSelect={selectDocument}
-            isLoading={isLoading}
+            onUpload={handleUpload}
+            isLoading={loading}
+            isUploading={isUploading}
+            error={error}
+            onRetry={() => void refresh()}
           />
         </aside>
 

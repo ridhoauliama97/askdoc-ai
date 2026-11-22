@@ -90,6 +90,10 @@ export function DocumentCard({
                   : `${progress}% · ${embeddedChunks}/${totalChunks} chunk`}
               </p>
             </div>
+          ) : status === 'awaiting_upload' ? (
+            <p className="text-[11px] text-muted-foreground">
+              Pemrosesan akan dimulai sebentar lagi.
+            </p>
           ) : null}
 
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

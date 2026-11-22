@@ -1,22 +1,31 @@
 'use client';
 
-import { FilePlus, FileText, Info, Upload } from 'lucide-react';
+import { CircleAlert, FilePlus, FileText, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DocumentCard } from '@/components/document-card';
 import { EmptyState } from '@/components/empty-state';
+import { UploadButton } from '@/components/upload-button';
 import type { DocumentListItem } from '@/lib/types';
+import {
+  DOCUMENT_TTL_HOURS,
+  MAX_ACTIVE_DOCUMENTS,
+  MAX_PDF_MB,
+  MAX_PDF_PAGES,
+} from '@/lib/upload';
 import { cn } from '@/lib/utils';
-
-const MAX_ACTIVE_DOCUMENTS = 5;
 
 type DocumentSidebarProps = {
   documents: DocumentListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onUpload: (file: File) => void | Promise<unknown>;
   isLoading?: boolean;
+  isUploading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   className?: string;
 };
 
@@ -24,7 +33,11 @@ export function DocumentSidebar({
   documents,
   selectedId,
   onSelect,
+  onUpload,
   isLoading = false,
+  isUploading = false,
+  error = null,
+  onRetry,
   className,
 }: DocumentSidebarProps) {
   return (
@@ -44,16 +57,37 @@ export function DocumentSidebar({
           </div>
         </div>
 
-        <Button type="button" className="mt-4 w-full" disabled>
-          <Upload aria-hidden="true" />
-          Upload PDF
-        </Button>
+        <UploadButton
+          onUpload={onUpload}
+          isUploading={isUploading}
+          className="mt-4"
+        />
+
+        {error ? (
+          <Alert variant="destructive" className="mt-3 px-2.5 py-2">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription className="text-xs leading-relaxed">
+              <span className="block">{error}</span>
+              {onRetry ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="mt-1 h-auto p-0 text-xs"
+                  onClick={onRetry}
+                >
+                  Coba lagi
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         <Alert className="mt-3 border-border/70 bg-muted/40 px-2.5 py-2">
           <Info aria-hidden="true" />
           <AlertDescription className="text-xs leading-relaxed">
-            PDF maks. 15 MB, 100 halaman. Dokumen dihapus otomatis setelah 24
-            jam.
+            PDF maks. {MAX_PDF_MB} MB, {MAX_PDF_PAGES} halaman. Dokumen dihapus
+            otomatis setelah {DOCUMENT_TTL_HOURS} jam.
           </AlertDescription>
         </Alert>
       </div>
