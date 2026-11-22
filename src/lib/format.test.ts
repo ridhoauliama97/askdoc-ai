@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatTimeLeft } from './format';
+import { formatBytes, formatDate, formatTimeLeft } from './format';
 
 describe('formatBytes', () => {
   it('formats megabytes without decimals', () => {
@@ -22,5 +22,21 @@ describe('formatTimeLeft', () => {
     expect(
       formatTimeLeft('2026-11-22T09:00:00Z', new Date('2026-11-22T10:00:00Z')),
     ).toBe('Kedaluwarsa');
+  });
+
+  it('keeps hours beyond a day and includes minutes', () => {
+    expect(
+      formatTimeLeft('2026-11-23T11:30:00Z', new Date('2026-11-22T10:00:00Z')),
+    ).toBe('25 jam 30 menit');
+  });
+});
+
+describe('formatDate', () => {
+  it('formats a date in Indonesian', () => {
+    expect(formatDate(new Date(2026, 10, 22, 12))).toBe('22 Nov 2026');
+  });
+
+  it('returns a dash for invalid input', () => {
+    expect(formatDate('not-a-date')).toBe('-');
   });
 });

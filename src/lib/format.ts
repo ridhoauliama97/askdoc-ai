@@ -11,8 +11,6 @@ const dateFormatter = new Intl.DateTimeFormat('id-ID', {
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
 const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -39,13 +37,9 @@ export function formatTimeLeft(
     return 'Kedaluwarsa';
   }
 
-  const days = Math.floor(remainingMs / DAY_MS);
-  const hours = Math.floor((remainingMs % DAY_MS) / HOUR_MS);
-  const minutes = Math.floor((remainingMs % HOUR_MS) / MINUTE_MS);
-
-  if (days > 0) {
-    return hours > 0 ? `${days} hari ${hours} jam` : `${days} hari`;
-  }
+  const totalMinutes = Math.floor(remainingMs / MINUTE_MS);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
 
   if (hours > 0) {
     return minutes > 0 ? `${hours} jam ${minutes} menit` : `${hours} jam`;
