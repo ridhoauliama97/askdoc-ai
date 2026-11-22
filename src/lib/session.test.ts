@@ -36,18 +36,22 @@ function mockSupabase(
     data: options.existingId ? { id: options.existingId } : null,
     error: options.selectError ?? null,
   });
-  const eq = vi.fn().mockReturnValue({ maybeSingle });
-  const select = vi.fn().mockReturnValue({ eq });
+  const selectEq = vi.fn().mockReturnValue({ maybeSingle });
+  const select = vi.fn().mockReturnValue({ eq: selectEq });
+  const updateEq = vi.fn().mockResolvedValue({ error: null });
+  const update = vi.fn().mockReturnValue({ eq: updateEq });
   const insert = vi
     .fn()
     .mockResolvedValue({ error: options.insertError ?? null });
-  const from = vi.fn().mockReturnValue({ select, insert });
+  const from = vi.fn().mockReturnValue({ select, insert, update });
 
   return {
     client: { from } as unknown as SupabaseClient<Database>,
     from,
     select,
-    eq,
+    selectEq,
+    update,
+    updateEq,
     maybeSingle,
     insert,
   };
@@ -55,6 +59,7 @@ function mockSupabase(
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe('readSessionId', () => {
@@ -120,6 +125,8 @@ describe('setSessionCookie', () => {
 
 describe('ensureSession', () => {
   it('reuses an existing row for the cookie id', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T10:00:00Z'));
     const supabase = mockSupabase({ existingId: SESSION_ID });
 
     const result = await ensureSession(
@@ -130,8 +137,12 @@ describe('ensureSession', () => {
     expect(result).toEqual({ sessionId: SESSION_ID, isNew: false });
     expect(supabase.from).toHaveBeenCalledWith('rag_sessions');
     expect(supabase.select).toHaveBeenCalledWith('id');
-    expect(supabase.eq).toHaveBeenCalledWith('id', SESSION_ID);
+    expect(supabase.selectEq).toHaveBeenCalledWith('id', SESSION_ID);
     expect(supabase.maybeSingle).toHaveBeenCalledOnce();
+    expect(supabase.update).toHaveBeenCalledWith({
+      last_seen_at: '2026-11-22T10:00:00.000Z',
+    });
+    expect(supabase.updateEq).toHaveBeenCalledWith('id', SESSION_ID);
     expect(supabase.insert).not.toHaveBeenCalled();
   });
 
@@ -144,6 +155,7 @@ describe('ensureSession', () => {
     expect(result.sessionId).toMatch(UUID_PATTERN);
     expect(supabase.from).toHaveBeenCalledWith('rag_sessions');
     expect(supabase.select).not.toHaveBeenCalled();
+    expect(supabase.update).not.toHaveBeenCalled();
     expect(supabase.insert).toHaveBeenCalledWith({ id: result.sessionId });
   });
 
@@ -158,7 +170,7 @@ describe('ensureSession', () => {
     expect(result.isNew).toBe(true);
     expect(result.sessionId).toMatch(UUID_PATTERN);
     expect(result.sessionId).not.toBe(OTHER_SESSION_ID);
-    expect(supabase.eq).toHaveBeenCalledWith('id', OTHER_SESSION_ID);
+    expect(supabase.selectEq).toHaveBeenCalledWith('id', OTHER_SESSION_ID);
     expect(supabase.insert).toHaveBeenCalledWith({ id: result.sessionId });
   });
 
@@ -174,5 +186,17 @@ describe('ensureSession', () => {
 
     expect(error).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
     expect(supabase.insert).not.toHaveBeenCalled();
+  });
+
+  it('maps a session insert error to INTERNAL_ERROR', async () => {
+    const supabase = mockSupabase({
+      insertError: { message: 'database unavailable' },
+    });
+
+    const error = await ensureSession(requestWithCookie(), supabase.client).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
   });
 });

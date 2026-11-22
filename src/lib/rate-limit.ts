@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
-import { AppError } from '@/lib/errors';
+import { AppError, INTERNAL_ERROR_MESSAGE } from '@/lib/errors';
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -12,7 +12,15 @@ export type RateLimitResult = {
 
 const GLOBAL_QUOTA_WINDOW_SECONDS = 86_400;
 
-const INTERNAL_ERROR_MESSAGE = 'Terjadi kesalahan pada server.';
+function secondsUntilNextUtcMidnight(now: Date): number {
+  const nextMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+
+  return Math.max(1, Math.ceil((nextMidnight - now.getTime()) / 1000));
+}
 
 export function getClientIp(headers: Headers): string {
   const forwardedFor = headers.get('x-forwarded-for');
@@ -91,9 +99,10 @@ export async function enforceGlobalQuota(
   scope: string,
   limit: number,
 ): Promise<void> {
+  const now = new Date();
   const result = await checkRateLimit(
     supabase,
-    dailyKey(scope),
+    dailyKey(scope, now),
     limit,
     GLOBAL_QUOTA_WINDOW_SECONDS,
   );
@@ -103,6 +112,7 @@ export async function enforceGlobalQuota(
       'GLOBAL_LIMIT_REACHED',
       429,
       'Kuota demo hari ini sudah habis. Silakan kembali besok ya.',
+      secondsUntilNextUtcMidnight(now),
     );
   }
 }

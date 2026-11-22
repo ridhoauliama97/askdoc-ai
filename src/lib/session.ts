@@ -2,7 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NextRequest, NextResponse } from 'next/server';
 import type { Database } from '@/lib/database.types';
-import { AppError } from '@/lib/errors';
+import { AppError, INTERNAL_ERROR_MESSAGE } from '@/lib/errors';
 
 export const SESSION_COOKIE = 'askdoc_sid';
 
@@ -10,8 +10,6 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const INTERNAL_ERROR_MESSAGE = 'Terjadi kesalahan pada server.';
 
 export function readSessionId(request: NextRequest): string | null {
   const value = request.cookies.get(SESSION_COOKIE)?.value;
@@ -64,6 +62,15 @@ export async function ensureSession(
     }
 
     if (data) {
+      const { error: updateError } = await supabase
+        .from('rag_sessions')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', data.id);
+
+      if (updateError) {
+        throw new AppError('INTERNAL_ERROR', 500, INTERNAL_ERROR_MESSAGE);
+      }
+
       return { sessionId: data.id, isNew: false };
     }
   }

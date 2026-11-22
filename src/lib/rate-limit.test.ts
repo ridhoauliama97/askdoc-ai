@@ -52,6 +52,15 @@ describe('getClientIp', () => {
     expect(getClientIp(headers)).toBe('203.0.113.9');
   });
 
+  it('prefers x-forwarded-for over x-real-ip', () => {
+    const headers = new Headers({
+      'x-forwarded-for': '203.0.113.9, 70.41.3.18',
+      'x-real-ip': '198.51.100.7',
+    });
+
+    expect(getClientIp(headers)).toBe('203.0.113.9');
+  });
+
   it('falls back to x-real-ip', () => {
     const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
 
@@ -209,9 +218,11 @@ describe('enforceGlobalQuota', () => {
     });
   });
 
-  it('throws GLOBAL_LIMIT_REACHED when the daily quota is exhausted', async () => {
+  it('throws GLOBAL_LIMIT_REACHED with the seconds until UTC midnight', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-22T23:00:00Z'));
     const supabase = rpcClient({
-      data: [{ allowed: false, remaining: 0, retry_after: 3600 }],
+      data: [{ allowed: false, remaining: 0, retry_after: 1234 }],
       error: null,
     });
 
@@ -225,6 +236,7 @@ describe('enforceGlobalQuota', () => {
     expect(error).toMatchObject({
       code: 'GLOBAL_LIMIT_REACHED',
       status: 429,
+      retryAfter: 3600,
       message: 'Kuota demo hari ini sudah habis. Silakan kembali besok ya.',
     });
   });

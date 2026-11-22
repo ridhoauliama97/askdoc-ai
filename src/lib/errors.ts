@@ -20,6 +20,8 @@ export type ErrorCode =
   | 'VALIDATION_ERROR'
   | 'INTERNAL_ERROR';
 
+export const INTERNAL_ERROR_MESSAGE = 'Terjadi kesalahan pada server.';
+
 export class AppError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
@@ -82,7 +84,7 @@ export function toErrorResponse(error: unknown): NextResponse {
   }
 
   return NextResponse.json(
-    errorBody('INTERNAL_ERROR', 'Terjadi kesalahan pada server.'),
+    errorBody('INTERNAL_ERROR', INTERNAL_ERROR_MESSAGE),
     { status: 500 },
   );
 }
