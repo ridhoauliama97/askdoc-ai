@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   getChunkProgress,
   getDocumentForSession,
+  isDocumentExpired,
   toDocumentListItem,
 } from '@/lib/documents';
 import { AppError, toErrorResponse } from '@/lib/errors';
@@ -25,10 +26,20 @@ export async function GET(
     }
 
     const supabase = getServiceClient();
-    const document = await getDocumentForSession(supabase, id, sessionId);
+    const document = await getDocumentForSession(supabase, id, sessionId, {
+      includeExpired: true,
+    });
 
     if (!document) {
       throw new AppError('NOT_FOUND', 404, NOT_FOUND_MESSAGE);
+    }
+
+    if (isDocumentExpired(document)) {
+      throw new AppError(
+        'DOC_EXPIRED',
+        410,
+        'Dokumen sudah kedaluwarsa dan dihapus.',
+      );
     }
 
     const progress = await getChunkProgress(supabase, document.id, document);

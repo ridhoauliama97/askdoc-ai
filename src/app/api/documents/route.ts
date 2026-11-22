@@ -69,12 +69,13 @@ export async function POST(request: NextRequest) {
 
     const input = createDocumentSchema.parse(await readJsonBody(request));
     const env = getEnv();
+    const maxPdfMb = Math.round(env.MAX_PDF_BYTES / (1024 * 1024));
 
     if (input.fileSize > env.MAX_PDF_BYTES) {
       throw new AppError(
         'FILE_TOO_LARGE',
         400,
-        'Ukuran file melebihi 15 MB.',
+        `Ukuran file melebihi ${maxPdfMb} MB.`,
       );
     }
 
@@ -87,7 +88,6 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = getServiceClient();
-    const { sessionId, isNew } = await ensureSession(request, supabase);
 
     const ip = getClientIp(request.headers);
     await enforceRateLimit(
@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
       SIGNED_UPLOAD_LIMIT,
       SIGNED_UPLOAD_WINDOW_SECONDS,
     );
-    await enforceGlobalQuota(supabase, 'upload', env.GLOBAL_DAILY_UPLOADS);
+
+    const { sessionId, isNew } = await ensureSession(request, supabase);
 
     const activeCount = await getActiveDocumentCount(supabase, sessionId);
 
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
       throw new AppError(
         'DOC_LIMIT_REACHED',
         409,
-        'Maksimal 5 dokumen aktif. Hapus dokumen lama untuk mengunggah lagi.',
+        `Maksimal ${env.MAX_DOCS_PER_SESSION} dokumen aktif. Hapus dokumen lama untuk mengunggah lagi.`,
       );
     }
 
@@ -117,6 +118,8 @@ export async function POST(request: NextRequest) {
         'Kuota demo hari ini sudah habis. Silakan kembali besok ya.',
       );
     }
+
+    await enforceGlobalQuota(supabase, 'upload', env.GLOBAL_DAILY_UPLOADS);
 
     const documentId = crypto.randomUUID();
     const storagePath = buildStoragePath(sessionId, documentId);
@@ -141,6 +144,7 @@ export async function POST(request: NextRequest) {
       .createSignedUploadUrl(storagePath);
 
     if (uploadError || !upload) {
+      await supabase.from('rag_documents').delete().eq('id', documentId);
       throw new AppError('INTERNAL_ERROR', 500, INTERNAL_ERROR_MESSAGE);
     }
 

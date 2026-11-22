@@ -148,15 +148,51 @@ describe('GET /api/documents/:id', () => {
       'session_id',
       SESSION_ID,
     );
-    expect(supabase.questions[0].gt).toHaveBeenCalledWith(
-      'expires_at',
-      NOW.toISOString(),
-    );
+    expect(supabase.questions[0].gt).not.toHaveBeenCalled();
     expect(supabase.questions[1].not).toHaveBeenCalledWith(
       'embedding',
       'is',
       null,
     );
+  });
+
+  it('returns 410 DOC_EXPIRED for an expired document owned by the session', async () => {
+    const supabase = createSupabaseMock([
+      {
+        data: documentRow({ expires_at: '2026-11-22T11:59:59Z' }),
+        error: null,
+      },
+    ]);
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
+    vi.mocked(readSessionId).mockReturnValue(SESSION_ID);
+
+    const response = await GET(request(), context());
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'DOC_EXPIRED',
+        message: 'Dokumen sudah kedaluwarsa dan dihapus.',
+      },
+    });
+    expect(supabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns INTERNAL_ERROR when chunk progress cannot be read', async () => {
+    const supabase = createSupabaseMock([
+      { data: documentRow(), error: null },
+      { data: null, error: { message: 'database unavailable' }, count: null },
+      { data: null, error: null, count: 42 },
+    ]);
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
+    vi.mocked(readSessionId).mockReturnValue(SESSION_ID);
+
+    const response = await GET(request(), context());
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'INTERNAL_ERROR' },
+    });
   });
 
   it('returns 404 for a document owned by another session', async () => {

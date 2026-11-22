@@ -48,6 +48,13 @@ export function buildStoragePath(
   return `${sessionId}/${documentId}.pdf`;
 }
 
+export function isDocumentExpired(
+  doc: Pick<DocumentRow, 'expires_at'>,
+  now: Date = new Date(),
+): boolean {
+  return new Date(doc.expires_at).getTime() <= now.getTime();
+}
+
 /**
  * Active documents for the per-session quota: not expired, not failed, and
  * awaiting_upload only while the row is younger than one hour.
@@ -60,7 +67,7 @@ export function countsAsActiveDocument(
     return false;
   }
 
-  if (new Date(doc.expires_at).getTime() <= now.getTime()) {
+  if (isDocumentExpired(doc, now)) {
     return false;
   }
 
@@ -115,14 +122,19 @@ export async function getDocumentForSession(
   supabase: SupabaseClient<Database>,
   documentId: string,
   sessionId: string,
+  options: { includeExpired?: boolean } = {},
 ): Promise<DocumentRow | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('rag_documents')
     .select('*')
     .eq('id', documentId)
-    .eq('session_id', sessionId)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
+    .eq('session_id', sessionId);
+
+  if (!options.includeExpired) {
+    query = query.gt('expires_at', new Date().toISOString());
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw new AppError('INTERNAL_ERROR', 500, INTERNAL_ERROR_MESSAGE);

@@ -9,6 +9,7 @@ import {
   getActiveStorageBytes,
   getChunkProgress,
   getDocumentForSession,
+  isDocumentExpired,
   isPdfFileName,
   sanitizeFileName,
   toDocumentListItem,
@@ -182,6 +183,20 @@ describe('countsAsActiveDocument', () => {
   });
 });
 
+describe('isDocumentExpired', () => {
+  it('is true at or past expires_at and false before it', () => {
+    expect(
+      isDocumentExpired({ expires_at: '2026-11-22T11:59:59Z' }, NOW),
+    ).toBe(true);
+    expect(
+      isDocumentExpired({ expires_at: '2026-11-22T12:00:00Z' }, NOW),
+    ).toBe(true);
+    expect(
+      isDocumentExpired({ expires_at: '2026-11-22T12:00:01Z' }, NOW),
+    ).toBe(false);
+  });
+});
+
 describe('getActiveDocumentCount', () => {
   it('filters rows with the shared active-document definition', async () => {
     const supabase = supabaseWith([
@@ -289,6 +304,22 @@ describe('getDocumentForSession', () => {
       'expires_at',
       NOW.toISOString(),
     );
+    expect(supabase.questions[0].maybeSingle).toHaveBeenCalledOnce();
+  });
+
+  it('can include expired rows so callers can return DOC_EXPIRED', async () => {
+    const expired = documentRow({ expires_at: '2026-11-22T11:59:59Z' });
+    const supabase = supabaseWith([{ data: expired, error: null }]);
+
+    const document = await getDocumentForSession(
+      supabase.client,
+      DOCUMENT_ID,
+      SESSION_ID,
+      { includeExpired: true },
+    );
+
+    expect(document).toEqual(expired);
+    expect(supabase.questions[0].gt).not.toHaveBeenCalled();
     expect(supabase.questions[0].maybeSingle).toHaveBeenCalledOnce();
   });
 

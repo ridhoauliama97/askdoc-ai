@@ -60,6 +60,7 @@ type QueryBuilder = {
   not: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
   insert: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
   maybeSingle: ReturnType<typeof vi.fn>;
   then: ReturnType<typeof vi.fn>;
 };
@@ -72,6 +73,7 @@ function queryBuilder(result: QueryResult): QueryBuilder {
   }
 
   builder.insert = vi.fn(() => Promise.resolve(result));
+  builder.delete = vi.fn(() => builder);
   builder.maybeSingle = vi.fn(() => Promise.resolve(result));
   builder.then = vi.fn(
     (
@@ -289,6 +291,7 @@ describe('POST /api/documents', () => {
     });
     expect(supabase.from).toHaveBeenCalledTimes(1);
     expect(supabase.createSignedUploadUrl).not.toHaveBeenCalled();
+    expect(enforceGlobalQuota).not.toHaveBeenCalled();
   });
 
   it('rejects when global active storage would be exceeded', async () => {
@@ -320,13 +323,144 @@ describe('POST /api/documents', () => {
     expect(supabase.createSignedUploadUrl).not.toHaveBeenCalled();
   });
 
-  it('returns RATE_LIMITED without creating a document', async () => {
-    const supabase = createSupabaseMock([]);
+  it('rejects when the global daily upload quota is exhausted', async () => {
+    const supabase = createSupabaseMock([
+      { data: [], error: null },
+      { data: [], error: null },
+    ]);
     vi.mocked(getServiceClient).mockReturnValue(supabase.client);
     vi.mocked(ensureSession).mockResolvedValue({
       sessionId: SESSION_ID,
-      isNew: true,
+      isNew: false,
     });
+    vi.mocked(enforceGlobalQuota).mockRejectedValue(
+      new AppError(
+        'GLOBAL_LIMIT_REACHED',
+        429,
+        'Kuota demo hari ini sudah habis. Silakan kembali besok ya.',
+        3_600,
+      ),
+    );
+
+    const response = await POST(
+      postRequest({ fileName: 'baru.pdf', fileSize: 1_024 }),
+    );
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'GLOBAL_LIMIT_REACHED', retryAfter: 3_600 },
+    });
+    expect(supabase.questions).toHaveLength(2);
+    expect(supabase.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('returns INTERNAL_ERROR when the document insert fails', async () => {
+    const supabase = createSupabaseMock([
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: { message: 'database unavailable' } },
+    ]);
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
+    vi.mocked(ensureSession).mockResolvedValue({
+      sessionId: SESSION_ID,
+      isNew: false,
+    });
+
+    const response = await POST(
+      postRequest({ fileName: 'baru.pdf', fileSize: 1_024 }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'INTERNAL_ERROR' },
+    });
+    expect(supabase.createSignedUploadUrl).not.toHaveBeenCalled();
+    expect(supabase.questions).toHaveLength(3);
+  });
+
+  it('deletes the inserted row when signing the upload URL fails', async () => {
+    const supabase = createSupabaseMock([
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+      { data: null, error: null },
+    ]);
+    supabase.createSignedUploadUrl.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'storage unavailable' },
+    });
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
+    vi.mocked(ensureSession).mockResolvedValue({
+      sessionId: SESSION_ID,
+      isNew: false,
+    });
+
+    const response = await POST(
+      postRequest({ fileName: 'baru.pdf', fileSize: 1_024 }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'INTERNAL_ERROR' },
+    });
+
+    const inserted = supabase.questions[2].insert.mock.calls[0]?.[0] as {
+      id: string;
+    };
+    expect(inserted.id).toMatch(UUID_PATTERN);
+    expect(supabase.questions[3].delete).toHaveBeenCalledOnce();
+    expect(supabase.questions[3].eq).toHaveBeenCalledWith('id', inserted.id);
+  });
+
+  it('sanitizes the display file name before inserting', async () => {
+    const supabase = createSupabaseMock([
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]);
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
+    vi.mocked(ensureSession).mockResolvedValue({
+      sessionId: SESSION_ID,
+      isNew: false,
+    });
+
+    const response = await POST(
+      postRequest({
+        fileName: 'folder/Peraturan\u0000 Perusahaan.pdf',
+        fileSize: 1_024,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(supabase.questions[2].insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_name: 'folderPeraturan Perusahaan.pdf',
+      }),
+    );
+  });
+
+  it('rejects malformed JSON with VALIDATION_ERROR', async () => {
+    const request = new NextRequest('http://localhost:3000/api/documents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not-json',
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Data permintaan tidak valid.',
+      },
+    });
+    expect(getServiceClient).not.toHaveBeenCalled();
+  });
+
+  it('returns RATE_LIMITED without creating a session or document', async () => {
+    const supabase = createSupabaseMock([]);
+    vi.mocked(getServiceClient).mockReturnValue(supabase.client);
     vi.mocked(enforceRateLimit).mockRejectedValue(
       new AppError(
         'RATE_LIMITED',
@@ -344,6 +478,7 @@ describe('POST /api/documents', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'RATE_LIMITED', retryAfter: 30 },
     });
+    expect(ensureSession).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
