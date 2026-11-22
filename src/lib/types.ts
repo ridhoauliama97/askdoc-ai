@@ -23,6 +23,7 @@ export type DocumentListItem = {
 };
 
 export type RagSource = {
+  chunkId: number;
   page: number;
   excerpt: string;
   similarity: number;

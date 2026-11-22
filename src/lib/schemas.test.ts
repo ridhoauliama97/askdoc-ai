@@ -72,31 +72,119 @@ describe('chatRequestSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('rejects a text part without text', () => {
+    expect(
+      chatRequestSchema.safeParse({
+        documentId: DOCUMENT_ID,
+        messages: [
+          { id: 'message-1', role: 'user', parts: [{ type: 'text' }] },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects data-sources with a non-array sources value', () => {
+    expect(
+      chatRequestSchema.safeParse({
+        documentId: DOCUMENT_ID,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-sources', data: { sources: 'garbage' } },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a valid data-sources message', () => {
+    const result = chatRequestSchema.safeParse({
+      documentId: DOCUMENT_ID,
+      messages: [
+        {
+          id: 'message-1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'data-sources',
+              id: 'sources',
+              data: {
+                sources: [
+                  {
+                    chunkId: 12,
+                    page: 4,
+                    excerpt: 'Cuti menikah diberikan tiga hari kerja.',
+                    similarity: 0.82,
+                  },
+                ],
+              },
+            },
+            { type: 'text', text: 'Cuti menikah tiga hari. [Halaman 4]' },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('ragSourceSchema', () => {
   it('accepts a valid source', () => {
     expect(
       ragSourceSchema.parse({
+        chunkId: 12,
         page: 4,
         excerpt: 'Cuti menikah diberikan tiga hari kerja.',
         similarity: 0.82,
       }),
     ).toEqual({
+      chunkId: 12,
       page: 4,
       excerpt: 'Cuti menikah diberikan tiga hari kerja.',
       similarity: 0.82,
     });
   });
 
-  it('rejects an invalid page or similarity', () => {
+  it('rejects an invalid chunk id, page, or similarity', () => {
     expect(
-      ragSourceSchema.safeParse({ page: 0, excerpt: 'x', similarity: 0.5 })
-        .success,
+      ragSourceSchema.safeParse({
+        chunkId: 0,
+        page: 1,
+        excerpt: 'x',
+        similarity: 0.5,
+      }).success,
     ).toBe(false);
     expect(
-      ragSourceSchema.safeParse({ page: 1, excerpt: 'x', similarity: 1.5 })
-        .success,
+      ragSourceSchema.safeParse({
+        chunkId: 1,
+        page: 0,
+        excerpt: 'x',
+        similarity: 0.5,
+      }).success,
+    ).toBe(false);
+    expect(
+      ragSourceSchema.safeParse({
+        chunkId: 1,
+        page: 1,
+        excerpt: 'x',
+        similarity: 1.5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an excerpt longer than 300 characters', () => {
+    expect(
+      ragSourceSchema.safeParse({
+        chunkId: 1,
+        page: 1,
+        excerpt: 'a'.repeat(301),
+        similarity: 0.5,
+      }).success,
     ).toBe(false);
   });
 });

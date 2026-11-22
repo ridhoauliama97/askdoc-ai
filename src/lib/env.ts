@@ -5,8 +5,15 @@ function requiredSecret(name: string) {
   return z.string().trim().min(1, `${name} wajib diisi.`);
 }
 
+function emptyStringToUndefined(value: unknown) {
+  return value === '' ? undefined : value;
+}
+
 function positiveInt(defaultValue: number) {
-  return z.coerce.number().int().positive().default(defaultValue);
+  return z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().positive().default(defaultValue),
+  );
 }
 
 const envSchema = z.object({
@@ -32,7 +39,10 @@ const envSchema = z.object({
   INGEST_BATCH_SIZE: positiveInt(16),
   EMBEDDING_DIMENSIONS: positiveInt(768),
   MATCH_COUNT: positiveInt(5),
-  MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
+  MATCH_THRESHOLD: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().min(0).max(1).default(0.35),
+  ),
   CHAT_HISTORY_MESSAGES: positiveInt(6),
   GLOBAL_DAILY_UPLOADS: positiveInt(50),
   GLOBAL_DAILY_INGEST_BATCHES: positiveInt(1_000),

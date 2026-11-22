@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseEnv } from '@/lib/env';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getEnv, parseEnv } from '@/lib/env';
 
 function validEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
   return {
@@ -53,5 +53,30 @@ describe('parseEnv', () => {
 
   it('rejects a threshold outside 0..1', () => {
     expect(() => parseEnv(validEnv({ MATCH_THRESHOLD: '1.5' }))).toThrow();
+  });
+
+  it('treats empty numeric values as missing and applies defaults', () => {
+    const env = parseEnv(
+      validEnv({ MATCH_THRESHOLD: '', MAX_PDF_PAGES: '' }),
+    );
+
+    expect(env.MATCH_THRESHOLD).toBe(0.35);
+    expect(env.MAX_PDF_PAGES).toBe(100);
+  });
+});
+
+describe('getEnv', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns the same cached object on repeated calls', () => {
+    for (const [key, value] of Object.entries(validEnv())) {
+      if (value !== undefined) {
+        vi.stubEnv(key, value);
+      }
+    }
+
+    expect(getEnv()).toBe(getEnv());
   });
 });
