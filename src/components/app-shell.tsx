@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { ChatPanel } from '@/components/chat-panel';
 import { DocumentSidebar } from '@/components/document-sidebar';
@@ -14,19 +14,58 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { useDocuments } from '@/hooks/use-documents';
+import { useIngest } from '@/hooks/use-ingest';
 
 export function AppShell() {
-  const { documents, loading, error, refresh, uploadPdf } = useDocuments();
+  const {
+    documents,
+    loading,
+    error,
+    refresh,
+    uploadPdf,
+    updateDocumentProgress,
+  } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const {
+    progress: ingestProgress,
+    isRunning: isIngesting,
+    error: ingestError,
+    start: startIngest,
+    resume: resumeIngest,
+  } = useIngest(selectedId);
 
   const selectedDocument =
     documents.find((document) => document.id === selectedId) ?? null;
 
+  useEffect(() => {
+    if (ingestProgress) {
+      updateDocumentProgress(ingestProgress.documentId, ingestProgress);
+    }
+  }, [ingestProgress, updateDocumentProgress]);
+
+  useEffect(() => {
+    if (ingestProgress?.status === 'ready') {
+      void refresh();
+    }
+  }, [ingestProgress?.status, refresh]);
+
+  useEffect(() => {
+    if (ingestError) {
+      void refresh();
+    }
+  }, [ingestError, refresh]);
+
   function selectDocument(id: string) {
     setSelectedId(id);
     setIsSidebarOpen(false);
+  }
+
+  function resumeDocument(id: string) {
+    setSelectedId(id);
+    setIsSidebarOpen(false);
+    void startIngest(id);
   }
 
   async function handleUpload(file: File) {
@@ -38,6 +77,7 @@ export function AppShell() {
       if (documentId) {
         setSelectedId(documentId);
         setIsSidebarOpen(false);
+        void startIngest(documentId);
       }
     } finally {
       setIsUploading(false);
@@ -77,6 +117,10 @@ export function AppShell() {
               isUploading={isUploading}
               error={error}
               onRetry={() => void refresh()}
+              onResume={resumeDocument}
+              onResumeError={() => void resumeIngest()}
+              ingestError={ingestError}
+              resumeDisabled={isIngesting}
             />
           </SheetContent>
         </Sheet>
@@ -100,6 +144,10 @@ export function AppShell() {
             isUploading={isUploading}
             error={error}
             onRetry={() => void refresh()}
+            onResume={resumeDocument}
+            onResumeError={() => void resumeIngest()}
+            ingestError={ingestError}
+            resumeDisabled={isIngesting}
           />
         </aside>
 

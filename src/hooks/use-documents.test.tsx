@@ -351,6 +351,29 @@ describe('useDocuments', () => {
     expect(uploadToSignedUrl).not.toHaveBeenCalled();
   });
 
+  it('applies live ingest progress to a document', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ documents: [uploadedDocument] }));
+
+    const { result } = await renderDocumentsHook();
+
+    act(() => {
+      result.current.updateDocumentProgress(DOCUMENT_ID, {
+        status: 'embedding',
+        pageCount: 12,
+        embeddedChunks: 32,
+        totalChunks: 120,
+      });
+    });
+
+    expect(result.current.documents[0]).toEqual({
+      ...uploadedDocument,
+      status: 'embedding',
+      pageCount: 12,
+      embeddedChunks: 32,
+      totalChunks: 120,
+    });
+  });
+
   it('polls every 5 seconds while a document is parsing or embedding', async () => {
     vi.useFakeTimers();
 

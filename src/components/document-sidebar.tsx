@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DocumentCard } from '@/components/document-card';
 import { EmptyState } from '@/components/empty-state';
 import { UploadButton } from '@/components/upload-button';
+import type { IngestError } from '@/hooks/use-ingest';
 import type { DocumentListItem } from '@/lib/types';
 import {
   DOCUMENT_TTL_HOURS,
@@ -26,6 +27,10 @@ type DocumentSidebarProps = {
   isUploading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  onResume?: (id: string) => void;
+  onResumeError?: () => void;
+  ingestError?: IngestError | null;
+  resumeDisabled?: boolean;
   className?: string;
 };
 
@@ -38,6 +43,10 @@ export function DocumentSidebar({
   isUploading = false,
   error = null,
   onRetry,
+  onResume,
+  onResumeError,
+  ingestError = null,
+  resumeDisabled = false,
   className,
 }: DocumentSidebarProps) {
   return (
@@ -77,6 +86,27 @@ export function DocumentSidebar({
                   onClick={onRetry}
                 >
                   Coba lagi
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {ingestError ? (
+          <Alert variant="destructive" className="mt-3 px-2.5 py-2">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription className="text-xs leading-relaxed">
+              <span className="block">{ingestError.message}</span>
+              {ingestError.retryable && onResumeError ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="mt-1 h-auto p-0 text-xs"
+                  disabled={resumeDisabled}
+                  onClick={onResumeError}
+                >
+                  Lanjutkan
                 </Button>
               ) : null}
             </AlertDescription>
@@ -129,6 +159,8 @@ export function DocumentSidebar({
                   document={document}
                   selected={document.id === selectedId}
                   onSelect={onSelect}
+                  onResume={onResume}
+                  resumeDisabled={resumeDisabled}
                 />
               ))}
             </ul>

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DocumentListItem } from '@/lib/types';
 import { DocumentCard } from './document-card';
@@ -49,6 +49,62 @@ describe('DocumentCard', () => {
     expect(
       screen.getByText('Pemrosesan akan dimulai sebentar lagi.'),
     ).toBeInTheDocument();
+  });
+
+  it('shows the parsing phase copy', () => {
+    render(
+      <DocumentCard
+        document={{ ...document, status: 'parsing', embeddedChunks: 0 }}
+      />,
+    );
+
+    expect(screen.getByText('Parsing dokumen…')).toBeInTheDocument();
+  });
+
+  it('shows the embedding progress with embedded and total chunk counts', () => {
+    render(
+      <DocumentCard
+        document={{
+          ...document,
+          status: 'embedding',
+          embeddedChunks: 32,
+          totalChunks: 120,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Membuat embedding 32/120')).toBeInTheDocument();
+  });
+
+  it('shows a resume action for a processing document without selecting it', () => {
+    const onResume = vi.fn();
+    const onSelect = vi.fn();
+
+    render(
+      <DocumentCard
+        document={{
+          ...document,
+          status: 'embedding',
+          embeddedChunks: 32,
+          totalChunks: 120,
+        }}
+        onResume={onResume}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }));
+
+    expect(onResume).toHaveBeenCalledWith(document.id);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not show a resume action for a ready document', () => {
+    render(<DocumentCard document={document} onResume={vi.fn()} />);
+
+    expect(
+      screen.queryByRole('button', { name: 'Lanjutkan' }),
+    ).not.toBeInTheDocument();
   });
 
   it('lowercases the countdown when less than a minute is left', () => {

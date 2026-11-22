@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getBrowserClient } from '@/lib/supabase/browser';
-import type { DocumentListItem } from '@/lib/types';
+import type { DocumentListItem, DocumentStatus } from '@/lib/types';
 import {
   DOCUMENTS_LOAD_MESSAGE,
   PDF_CONTENT_TYPE,
@@ -36,6 +36,13 @@ type RefreshedUpload = {
 
 type ApiErrorBody = {
   error?: ApiErrorPayload;
+};
+
+type DocumentProgress = {
+  status: DocumentStatus;
+  pageCount: number | null;
+  embeddedChunks: number;
+  totalChunks: number;
 };
 
 async function readJson<T>(response: Response): Promise<T | null> {
@@ -127,6 +134,29 @@ export function useDocuments() {
     return () => clearInterval(intervalId);
   }, [shouldPoll, refresh]);
 
+  const updateDocumentProgress = useCallback(
+    (documentId: string, next: DocumentProgress) => {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === documentId
+            ? {
+                ...document,
+                status: next.status,
+                pageCount: next.pageCount ?? document.pageCount,
+                embeddedChunks: next.embeddedChunks,
+                totalChunks: next.totalChunks,
+              }
+            : document,
+        ),
+      );
+    },
+    [],
+  );
+
   const uploadPdf = useCallback(
     async (file: File): Promise<string | null> => {
       const validationMessage = validatePdfFile(file);
@@ -214,5 +244,5 @@ export function useDocuments() {
     [refresh],
   );
 
-  return { documents, loading, error, refresh, uploadPdf };
+  return { documents, loading, error, refresh, uploadPdf, updateDocumentProgress };
 }
