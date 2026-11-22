@@ -28,6 +28,9 @@ export function AppShell() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [optimisticParsingIds, setOptimisticParsingIds] = useState<string[]>(
+    [],
+  );
   const {
     progress: ingestProgress,
     isRunning: isIngesting,
@@ -36,8 +39,19 @@ export function AppShell() {
     resume: resumeIngest,
   } = useIngest(selectedId);
 
+  const displayDocuments =
+    optimisticParsingIds.length === 0
+      ? documents
+      : documents.map((document) =>
+          optimisticParsingIds.includes(document.id) &&
+          document.status === 'awaiting_upload' &&
+          ingestError?.documentId !== document.id
+            ? { ...document, status: 'parsing' as const }
+            : document,
+        );
+
   const selectedDocument =
-    documents.find((document) => document.id === selectedId) ?? null;
+    displayDocuments.find((document) => document.id === selectedId) ?? null;
 
   useEffect(() => {
     if (ingestProgress) {
@@ -68,6 +82,18 @@ export function AppShell() {
     void startIngest(id);
   }
 
+  function markParsing(documentId: string) {
+    setOptimisticParsingIds((ids) =>
+      ids.includes(documentId) ? ids : [...ids, documentId],
+    );
+    updateDocumentProgress(documentId, {
+      status: 'parsing',
+      pageCount: null,
+      embeddedChunks: 0,
+      totalChunks: 0,
+    });
+  }
+
   async function handleUpload(file: File) {
     setIsUploading(true);
 
@@ -75,6 +101,7 @@ export function AppShell() {
       const documentId = await uploadPdf(file);
 
       if (documentId) {
+        markParsing(documentId);
         setSelectedId(documentId);
         setIsSidebarOpen(false);
         void startIngest(documentId);
@@ -109,7 +136,7 @@ export function AppShell() {
               <SheetDescription>Daftar dokumen pada sesi ini.</SheetDescription>
             </SheetHeader>
             <DocumentSidebar
-              documents={documents}
+              documents={displayDocuments}
               selectedId={selectedId}
               onSelect={selectDocument}
               onUpload={handleUpload}
@@ -136,7 +163,7 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-80 shrink-0 border-r bg-sidebar md:flex md:flex-col">
           <DocumentSidebar
-            documents={documents}
+            documents={displayDocuments}
             selectedId={selectedId}
             onSelect={selectDocument}
             onUpload={handleUpload}

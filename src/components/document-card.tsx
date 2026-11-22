@@ -92,46 +92,46 @@ export function DocumentCard({
             aria-pressed={selected}
             onClick={() => onSelect?.(id)}
             onKeyDown={handleKeyDown}
-            className="flex cursor-pointer flex-col gap-2.5 rounded-lg transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="flex cursor-pointer items-start gap-2.5 rounded-lg transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
           >
-            <div className="flex items-start gap-2.5">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <FileText aria-hidden="true" className="size-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium" title={fileName}>
-                  {fileName}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {details}
-                </p>
-              </div>
-              <StatusBadge status={status} />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <FileText aria-hidden="true" className="size-4" />
             </div>
-
-            {isProcessing ? (
-              <div className="space-y-1">
-                <Progress
-                  value={progress}
-                  aria-label={`Progres pemrosesan ${fileName}`}
-                  className="gap-1.5"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {progressCopy}
-                </p>
-              </div>
-            ) : status === 'awaiting_upload' ? (
-              <p className="text-[11px] text-muted-foreground">
-                Pemrosesan akan dimulai sebentar lagi.
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium" title={fileName}>
+                {fileName}
               </p>
-            ) : null}
-
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock3 aria-hidden="true" className="size-3" />
-              <span>
-                {timeLeft === 'Kedaluwarsa' ? timeLeft : `Sisa ${timeLeft}`}
-              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">{details}</p>
             </div>
+            <StatusBadge status={status} />
+          </div>
+
+          {isProcessing ? (
+            <div className="space-y-1">
+              <Progress
+                value={progress}
+                aria-label={`Progres pemrosesan ${fileName}`}
+                className="gap-1.5"
+              />
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-[11px] text-muted-foreground"
+              >
+                {progressCopy}
+              </p>
+            </div>
+          ) : status === 'awaiting_upload' ? (
+            <p className="text-[11px] text-muted-foreground">
+              Pemrosesan akan dimulai sebentar lagi.
+            </p>
+          ) : null}
+
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock3 aria-hidden="true" className="size-3" />
+            <span>
+              {timeLeft === 'Kedaluwarsa' ? timeLeft : `Sisa ${timeLeft}`}
+            </span>
           </div>
 
           {canResume ? (
@@ -141,6 +141,7 @@ export function DocumentCard({
                 variant="link"
                 size="xs"
                 className="h-auto p-0 text-[11px]"
+                aria-label={`Lanjutkan pemrosesan ${fileName}`}
                 disabled={resumeDisabled}
                 onClick={() => onResume?.(id)}
               >

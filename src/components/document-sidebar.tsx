@@ -49,6 +49,11 @@ export function DocumentSidebar({
   resumeDisabled = false,
   className,
 }: DocumentSidebarProps) {
+  const errorFileName = ingestError
+    ? (documents.find((document) => document.id === ingestError.documentId)
+        ?.fileName ?? 'dokumen')
+    : null;
+
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-sidebar', className)}>
       <div className="shrink-0 border-b px-4 py-5">
@@ -103,6 +108,7 @@ export function DocumentSidebar({
                   variant="link"
                   size="xs"
                   className="mt-1 h-auto p-0 text-xs"
+                  aria-label={`Lanjutkan pemrosesan ${errorFileName}`}
                   disabled={resumeDisabled}
                   onClick={onResumeError}
                 >

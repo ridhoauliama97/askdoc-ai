@@ -74,6 +74,10 @@ describe('DocumentCard', () => {
     );
 
     expect(screen.getByText('Membuat embedding 32/120')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Membuat embedding 32/120',
+    );
+    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
   });
 
   it('shows a resume action for a processing document without selecting it', () => {
@@ -93,17 +97,48 @@ describe('DocumentCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Lanjutkan pemrosesan peraturan-perusahaan.pdf',
+      }),
+    );
 
     expect(onResume).toHaveBeenCalledWith(document.id);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('disables the resume action while another ingest loop is running', () => {
+    const onResume = vi.fn();
+
+    render(
+      <DocumentCard
+        document={{
+          ...document,
+          status: 'embedding',
+          embeddedChunks: 32,
+          totalChunks: 120,
+        }}
+        onResume={onResume}
+        resumeDisabled
+      />,
+    );
+
+    const resume = screen.getByRole('button', {
+      name: 'Lanjutkan pemrosesan peraturan-perusahaan.pdf',
+    });
+
+    expect(resume).toBeDisabled();
+
+    fireEvent.click(resume);
+
+    expect(onResume).not.toHaveBeenCalled();
   });
 
   it('does not show a resume action for a ready document', () => {
     render(<DocumentCard document={document} onResume={vi.fn()} />);
 
     expect(
-      screen.queryByRole('button', { name: 'Lanjutkan' }),
+      screen.queryByRole('button', { name: /Lanjutkan/ }),
     ).not.toBeInTheDocument();
   });
 

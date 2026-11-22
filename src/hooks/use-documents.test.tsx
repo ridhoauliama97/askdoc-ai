@@ -374,6 +374,27 @@ describe('useDocuments', () => {
     });
   });
 
+  it('does not let a list poll hide optimistic parsing', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ documents: [uploadedDocument] }));
+
+    const { result } = await renderDocumentsHook();
+
+    act(() => {
+      result.current.updateDocumentProgress(DOCUMENT_ID, {
+        status: 'parsing',
+        pageCount: null,
+        embeddedChunks: 0,
+        totalChunks: 0,
+      });
+    });
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.documents[0].status).toBe('parsing');
+  });
+
   it('polls every 5 seconds while a document is parsing or embedding', async () => {
     vi.useFakeTimers();
 
@@ -437,14 +458,16 @@ describe('useDocuments', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    documents = [uploadedDocument];
+    documents = [{ ...uploadedDocument, status: 'ready' }];
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.current.documents).toEqual([uploadedDocument]);
+    expect(result.current.documents).toEqual([
+      { ...uploadedDocument, status: 'ready' },
+    ]);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_000);

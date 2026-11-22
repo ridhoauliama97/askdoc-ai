@@ -63,6 +63,41 @@ function isProcessing(document: DocumentListItem): boolean {
   return document.status === 'parsing' || document.status === 'embedding';
 }
 
+/**
+ * Statuses only move forward. While the client has optimistically marked a
+ * fresh upload as parsing, a list poll that still reads awaiting_upload must
+ * not hide the parsing state (the ingest request may not have reached the
+ * database yet).
+ */
+function mergeDocumentList(
+  current: DocumentListItem[],
+  incoming: DocumentListItem[],
+): DocumentListItem[] {
+  const currentById = new Map(
+    current.map((document) => [document.id, document]),
+  );
+
+  return incoming.map((document) => {
+    const previous = currentById.get(document.id);
+
+    if (
+      previous &&
+      document.status === 'awaiting_upload' &&
+      isProcessing(previous)
+    ) {
+      return {
+        ...document,
+        status: previous.status,
+        pageCount: previous.pageCount ?? document.pageCount,
+        embeddedChunks: previous.embeddedChunks,
+        totalChunks: previous.totalChunks,
+      };
+    }
+
+    return document;
+  });
+}
+
 async function fetchDocumentList(): Promise<DocumentListItem[] | null> {
   try {
     const response = await fetch(DOCUMENTS_ENDPOINT, { cache: 'no-store' });
@@ -96,7 +131,7 @@ export function useDocuments() {
       }
 
       if (nextDocuments) {
-        setDocuments(nextDocuments);
+        setDocuments((current) => mergeDocumentList(current, nextDocuments));
         setError(null);
       } else {
         setError(DOCUMENTS_LOAD_MESSAGE);

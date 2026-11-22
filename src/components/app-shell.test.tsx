@@ -197,6 +197,49 @@ describe('AppShell', () => {
     await waitFor(() => expect(start).toHaveBeenCalledWith(document.id));
   });
 
+  it('shows parsing immediately after upload before the first ingest response', async () => {
+    const start = vi.fn().mockReturnValue(new Promise(() => {}));
+    const uploadPdf = vi.fn().mockResolvedValue(document.id);
+
+    useDocumentsMock.mockReturnValue(
+      hookState({
+        documents: [
+          {
+            ...document,
+            pageCount: null,
+            status: 'awaiting_upload',
+            embeddedChunks: 0,
+            totalChunks: 0,
+          },
+        ],
+        uploadPdf,
+      }),
+    );
+    useIngestMock.mockReturnValue(ingestState({ start }));
+
+    const { container } = render(<AppShell />);
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    );
+
+    fireEvent.change(input!, {
+      target: {
+        files: [
+          new File(['%PDF-1.7'], 'peraturan-perusahaan.pdf', {
+            type: 'application/pdf',
+          }),
+        ],
+      },
+    });
+
+    await waitFor(() => expect(start).toHaveBeenCalledWith(document.id));
+    await screen.findByText('Parsing dokumen…');
+
+    expect(
+      screen.queryByText('Pemrosesan akan dimulai sebentar lagi.'),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows a resume action for a processing document without auto-starting', () => {
     const start = vi.fn().mockResolvedValue(undefined);
 
@@ -218,13 +261,19 @@ describe('AppShell', () => {
 
     expect(start).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Lanjutkan pemrosesan peraturan-perusahaan.pdf',
+      }),
+    );
 
     expect(start).toHaveBeenCalledWith(document.id);
   });
 
   it('shows the AI busy banner and resumes the failed document', () => {
     const resume = vi.fn().mockResolvedValue(undefined);
+    const message =
+      'Layanan AI sedang sibuk. Progres tersimpan. Coba lagi dalam 20 detik.';
 
     useDocumentsMock.mockReturnValue(hookState({ documents: [document] }));
     useIngestMock.mockReturnValue(
@@ -233,7 +282,7 @@ describe('AppShell', () => {
         error: {
           documentId: document.id,
           code: 'AI_RATE_LIMITED',
-          message: 'Layanan AI sedang sibuk. Progres tersimpan.',
+          message,
           retryAfter: 20,
           retryable: true,
         },
@@ -242,13 +291,41 @@ describe('AppShell', () => {
 
     render(<AppShell />);
 
-    expect(
-      screen.getByText('Layanan AI sedang sibuk. Progres tersimpan.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Lanjutkan pemrosesan peraturan-perusahaan.pdf',
+      }),
+    );
 
     expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the sidebar resume action for a non-retryable error', () => {
+    useDocumentsMock.mockReturnValue(hookState({ documents: [document] }));
+    useIngestMock.mockReturnValue(
+      ingestState({
+        error: {
+          documentId: document.id,
+          code: 'PDF_NO_TEXT',
+          message:
+            'PDF ini tidak mengandung teks yang bisa dibaca (kemungkinan hasil scan). OCR belum didukung.',
+          retryable: false,
+        },
+      }),
+    );
+
+    render(<AppShell />);
+
+    expect(
+      screen.getByText(
+        'PDF ini tidak mengandung teks yang bisa dibaca (kemungkinan hasil scan). OCR belum didukung.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Lanjutkan/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('applies ingest progress to the document list and refreshes when ready', () => {

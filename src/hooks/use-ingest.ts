@@ -92,9 +92,11 @@ export function getIngestErrorMessage(
     case 'UPLOAD_NOT_FOUND':
       return UPLOAD_NOT_FOUND_MESSAGE;
     case 'DOC_NOT_READY':
-      return 'Dokumen masih diproses.';
+      return FAILED_DOCUMENT_MESSAGE;
     case 'AI_RATE_LIMITED':
-      return 'Layanan AI sedang sibuk. Progres tersimpan.';
+      return retryAfter !== undefined
+        ? `Layanan AI sedang sibuk. Progres tersimpan. Coba lagi dalam ${retryAfter} detik.`
+        : 'Layanan AI sedang sibuk. Progres tersimpan.';
     case 'INGEST_BUSY':
       return 'Proses sedang berjalan di tab lain.';
     case 'RATE_LIMITED':
@@ -257,6 +259,8 @@ export function useIngest(documentId: string | null) {
 
   const mountedRef = useRef(true);
   const runningRef = useRef(false);
+  const runningDocumentIdRef = useRef<string | null>(null);
+  const queueRef = useRef<string[]>([]);
   const pollIntervalRef = useRef<number | null>(null);
   const pollResolveRef = useRef<((result: PollResult) => void) | null>(null);
   const lastDocumentIdRef = useRef<string | null>(null);
@@ -281,6 +285,7 @@ export function useIngest(documentId: string | null) {
       const resolve = pollResolveRef.current;
       pollResolveRef.current = null;
       resolve?.({ kind: 'stopped' });
+      queueRef.current = [];
     };
   }, []);
 
@@ -356,94 +361,124 @@ export function useIngest(documentId: string | null) {
     [applyProgress],
   );
 
+  const runIngestLoop = useCallback(
+    async (id: string) => {
+      while (mountedRef.current) {
+        const step = await postIngestStep(id);
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        if (step.kind === 'error') {
+          if (step.error.code === 'INGEST_BUSY') {
+            // Read once so polling compares against the current server
+            // progress instead of retrying blindly while another tab works.
+            const baseline = await fetchDocumentProgress(id);
+
+            if (!mountedRef.current) {
+              return;
+            }
+
+            if (baseline) {
+              applyProgress(baseline);
+
+              if (baseline.status === 'ready') {
+                return;
+              }
+
+              if (baseline.status === 'failed') {
+                setError(buildFailedDocumentError(id));
+                return;
+              }
+            }
+
+            const poll = await waitForLockClear(id, baseline);
+
+            if (!mountedRef.current) {
+              return;
+            }
+
+            if (poll.kind === 'retry') {
+              continue;
+            }
+
+            if (poll.kind === 'failed') {
+              setError(buildFailedDocumentError(id));
+            }
+
+            return;
+          }
+
+          setError(step.error);
+          return;
+        }
+
+        applyProgress(step.progress);
+
+        if (
+          step.progress.status === 'ready' ||
+          step.progress.remaining === 0
+        ) {
+          return;
+        }
+
+        if (step.progress.status === 'failed') {
+          setError(buildFailedDocumentError(id));
+          return;
+        }
+      }
+    },
+    [applyProgress, waitForLockClear],
+  );
+
   const start = useCallback(
     async (targetId?: string) => {
       const id = targetId ?? documentId;
 
-      if (!id || runningRef.current) {
+      if (!id) {
+        return;
+      }
+
+      if (runningRef.current) {
+        // Uploads can finish while another document is still ingesting.
+        // Keep the single-loop guarantee, but do not drop the new document.
+        if (
+          id !== runningDocumentIdRef.current &&
+          !queueRef.current.includes(id)
+        ) {
+          queueRef.current.push(id);
+        }
+
         return;
       }
 
       runningRef.current = true;
-      lastDocumentIdRef.current = id;
+      runningDocumentIdRef.current = id;
+      let nextId: string | null = id;
+
       setIsRunning(true);
-      setError(null);
 
       try {
-        while (mountedRef.current) {
-          const step = await postIngestStep(id);
+        while (nextId && mountedRef.current) {
+          runningDocumentIdRef.current = nextId;
+          lastDocumentIdRef.current = nextId;
+          setError(null);
 
-          if (!mountedRef.current) {
-            return;
-          }
+          await runIngestLoop(nextId);
 
-          if (step.kind === 'error') {
-            if (step.error.code === 'INGEST_BUSY') {
-              // Read once so polling compares against the current server
-              // progress instead of retrying blindly while another tab works.
-              const baseline = await fetchDocumentProgress(id);
-
-              if (!mountedRef.current) {
-                return;
-              }
-
-              if (baseline) {
-                applyProgress(baseline);
-
-                if (baseline.status === 'ready') {
-                  return;
-                }
-
-                if (baseline.status === 'failed') {
-                  setError(buildFailedDocumentError(id));
-                  return;
-                }
-              }
-
-              const poll = await waitForLockClear(id, baseline);
-
-              if (!mountedRef.current) {
-                return;
-              }
-
-              if (poll.kind === 'retry') {
-                continue;
-              }
-
-              if (poll.kind === 'failed') {
-                setError(buildFailedDocumentError(id));
-              }
-
-              return;
-            }
-
-            setError(step.error);
-            return;
-          }
-
-          applyProgress(step.progress);
-
-          if (
-            step.progress.status === 'ready' ||
-            step.progress.remaining === 0
-          ) {
-            return;
-          }
-
-          if (step.progress.status === 'failed') {
-            setError(buildFailedDocumentError(id));
-            return;
-          }
+          nextId = queueRef.current.shift() ?? null;
         }
       } finally {
         runningRef.current = false;
+        runningDocumentIdRef.current = null;
 
         if (mountedRef.current) {
           setIsRunning(false);
         }
       }
     },
-    [applyProgress, documentId, waitForLockClear],
+    [documentId, runIngestLoop],
   );
 
   const resume = useCallback(async () => {

@@ -144,7 +144,8 @@ describe('useIngest', () => {
     expect(result.current.error).toEqual({
       documentId: DOCUMENT_ID,
       code: 'AI_RATE_LIMITED',
-      message: 'Layanan AI sedang sibuk. Progres tersimpan.',
+      message:
+        'Layanan AI sedang sibuk. Progres tersimpan. Coba lagi dalam 17 detik.',
       retryAfter: 17,
       retryable: true,
     });
@@ -314,6 +315,110 @@ describe('useIngest', () => {
     expect(result.current.progress?.status).toBe('ready');
   });
 
+  it('queues a second start while the first loop runs and begins it after the first finishes', async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    let resolveSecond: ((response: Response) => void) | undefined;
+
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+
+      if (url === `/api/documents/${DOCUMENT_ID}/ingest`) {
+        return new Promise<Response>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+
+      if (url === `/api/documents/${OTHER_DOCUMENT_ID}/ingest`) {
+        return new Promise<Response>((resolve) => {
+          resolveSecond = resolve;
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { result } = renderHook(() => useIngest(DOCUMENT_ID));
+    let firstStart: Promise<void>;
+
+    act(() => {
+      firstStart = result.current.start();
+    });
+
+    act(() => {
+      void result.current.start(OTHER_DOCUMENT_ID);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFirst!(ingestProgress({ status: 'ready', embeddedChunks: 40 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/documents/${OTHER_DOCUMENT_ID}/ingest`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(result.current.isRunning).toBe(true);
+
+    await act(async () => {
+      resolveSecond!(
+        ingestProgress({
+          status: 'ready',
+          totalChunks: 10,
+          embeddedChunks: 10,
+        }),
+      );
+      await firstStart!;
+    });
+
+    expect(result.current.isRunning).toBe(false);
+    expect(result.current.progress?.documentId).toBe(OTHER_DOCUMENT_ID);
+    expect(result.current.progress?.status).toBe('ready');
+  });
+
+  it('resumes the document that failed instead of the current selection', async () => {
+    let failedDocumentCalls = 0;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      if (
+        String(input) === `/api/documents/${DOCUMENT_ID}/ingest` &&
+        init?.method === 'POST'
+      ) {
+        failedDocumentCalls += 1;
+
+        if (failedDocumentCalls === 1) {
+          return apiError('AI_RATE_LIMITED', 429, 5);
+        }
+
+        return ingestProgress({ status: 'ready', embeddedChunks: 40 });
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+
+    const { result } = renderHook(() => useIngest(OTHER_DOCUMENT_ID));
+
+    await act(async () => {
+      await result.current.start(DOCUMENT_ID);
+    });
+
+    expect(result.current.error?.documentId).toBe(DOCUMENT_ID);
+
+    await act(async () => {
+      await result.current.resume();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/documents/${DOCUMENT_ID}/ingest`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(result.current.progress?.documentId).toBe(DOCUMENT_ID);
+    expect(result.current.progress?.status).toBe('ready');
+  });
+
   it('clears the polling interval when unmounted', async () => {
     vi.useFakeTimers();
 
@@ -418,7 +523,7 @@ describe('getIngestErrorMessage', () => {
       'UPLOAD_NOT_FOUND',
       'Upload belum selesai. Minta URL upload baru lalu ulangi.',
     ],
-    ['DOC_NOT_READY', 'Dokumen masih diproses.'],
+    ['DOC_NOT_READY', 'Dokumen gagal diproses. Hapus lalu unggah ulang.'],
     [
       'AI_RATE_LIMITED',
       'Layanan AI sedang sibuk. Progres tersimpan.',
