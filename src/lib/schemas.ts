@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RagSource } from '@/lib/types';
+import type { RagSource, RagUIMessage } from '@/lib/types';
 
 const pdfFileNameSchema = z
   .string()
@@ -32,9 +32,7 @@ const textPartSchema = z.object({
 const dataSourcesPartSchema = z.object({
   type: z.literal('data-sources'),
   id: z.string().optional(),
-  data: z.object({
-    sources: z.array(ragSourceSchema),
-  }),
+  data: z.array(ragSourceSchema),
 });
 
 const messagePartSchema = z.discriminatedUnion('type', [
@@ -42,7 +40,7 @@ const messagePartSchema = z.discriminatedUnion('type', [
   dataSourcesPartSchema,
 ]);
 
-export const ragUIMessageSchema = z.object({
+export const ragUIMessageSchema: z.ZodType<RagUIMessage> = z.object({
   id: z.string().min(1),
   role: z.enum(['user', 'assistant']),
   parts: z.array(messagePartSchema).min(1),

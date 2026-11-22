@@ -84,7 +84,7 @@ describe('chatRequestSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects data-sources with a non-array sources value', () => {
+  it('rejects data-sources with the old wrapped sources object', () => {
     expect(
       chatRequestSchema.safeParse({
         documentId: DOCUMENT_ID,
@@ -93,8 +93,35 @@ describe('chatRequestSchema', () => {
             id: 'message-1',
             role: 'assistant',
             parts: [
-              { type: 'data-sources', data: { sources: 'garbage' } },
+              {
+                type: 'data-sources',
+                data: {
+                  sources: [
+                    {
+                      chunkId: 12,
+                      page: 4,
+                      excerpt: 'Cuti menikah diberikan tiga hari kerja.',
+                      similarity: 0.82,
+                    },
+                  ],
+                },
+              },
             ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects data-sources when data is not an array', () => {
+    expect(
+      chatRequestSchema.safeParse({
+        documentId: DOCUMENT_ID,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'assistant',
+            parts: [{ type: 'data-sources', data: 'garbage' }],
           },
         ],
       }).success,
@@ -112,16 +139,14 @@ describe('chatRequestSchema', () => {
             {
               type: 'data-sources',
               id: 'sources',
-              data: {
-                sources: [
-                  {
-                    chunkId: 12,
-                    page: 4,
-                    excerpt: 'Cuti menikah diberikan tiga hari kerja.',
-                    similarity: 0.82,
-                  },
-                ],
-              },
+              data: [
+                {
+                  chunkId: 12,
+                  page: 4,
+                  excerpt: 'Cuti menikah diberikan tiga hari kerja.',
+                  similarity: 0.82,
+                },
+              ],
             },
             { type: 'text', text: 'Cuti menikah tiga hari. [Halaman 4]' },
           ],
