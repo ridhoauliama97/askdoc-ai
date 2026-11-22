@@ -169,7 +169,7 @@ Proteksi konkurensi: kolom `ingest_lock_until`. Ingest mengambil lock optimistis
    - Panggil RPC `rag_match_chunks(document_id, query_embedding, match_count = 5, match_threshold = MATCH_THRESHOLD)`. Nilai default 0.35 adalah konstanta konfigurasi, bukan angka yang tersebar di kode.
    - Jika tidak ada chunk yang lolos threshold: stream jawaban tetap "Maaf, informasi itu tidak ditemukan dalam dokumen ini." tanpa memanggil LLM.
    - Jika ada: kirim chunk (dengan label halaman) + pertanyaan ke `gemini-3.5-flash-lite` lewat Vercel AI SDK `streamText`.
-   - Kirim data sumber terstruktur ke UI sebagai data part sebelum teks.
+   - Kirim data sumber terstruktur ke UI sebagai data part `data-sources` sebelum teks. Payload `data` adalah `RagSource[]` langsung, bukan wrapper `{ sources }`, agar cocok dengan `UIMessage<never, { sources: RagSource[] }>`.
 4. UI menampilkan jawaban streaming, marker `[Halaman N]` sebagai chip yang bisa diklik, dan kartu sumber. Marker yang halamannya tidak ada di sumber retrieval tidak dirender sebagai chip.
 5. Setelah stream selesai, server menyimpan pesan user + assistant + sumber ke `rag_messages` dalam satu transaksi. Teks yang disimpan sudah disanitasi.
 
