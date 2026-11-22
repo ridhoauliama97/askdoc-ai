@@ -35,9 +35,14 @@ const dataSourcesPartSchema = z.object({
   data: z.array(ragSourceSchema),
 });
 
+const stepStartPartSchema = z.object({
+  type: z.literal('step-start'),
+});
+
 const messagePartSchema = z.discriminatedUnion('type', [
   textPartSchema,
   dataSourcesPartSchema,
+  stepStartPartSchema,
 ]);
 
 export const ragUIMessageSchema: z.ZodType<RagUIMessage> = z.object({
@@ -47,7 +52,7 @@ export const ragUIMessageSchema: z.ZodType<RagUIMessage> = z.object({
 });
 
 export const chatRequestSchema = z.object({
-  documentId: z.string().uuid(),
+  documentId: z.uuid(),
   messages: z.array(ragUIMessageSchema).min(1, 'Minimal satu pesan.'),
 });
 

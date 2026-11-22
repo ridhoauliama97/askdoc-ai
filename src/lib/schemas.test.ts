@@ -84,6 +84,36 @@ describe('chatRequestSchema', () => {
     ).toBe(false);
   });
 
+  it('accepts a step-start part before text', () => {
+    const result = chatRequestSchema.safeParse({
+      documentId: DOCUMENT_ID,
+      messages: [
+        {
+          id: 'message-1',
+          role: 'assistant',
+          parts: [{ type: 'step-start' }, { type: 'text', text: 'jawaban' }],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unknown part type', () => {
+    expect(
+      chatRequestSchema.safeParse({
+        documentId: DOCUMENT_ID,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'assistant',
+            parts: [{ type: 'tool-call' }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects data-sources with the old wrapped sources object', () => {
     expect(
       chatRequestSchema.safeParse({
