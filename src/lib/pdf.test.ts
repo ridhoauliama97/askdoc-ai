@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { extractText } from 'unpdf';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { describe, expect, it, vi } from 'vitest';
 import type { ErrorCode } from '@/lib/errors';
 import { AppError } from '@/lib/errors';
@@ -21,6 +21,7 @@ vi.mock('unpdf', async (importOriginal) => {
   return {
     ...actual,
     extractText: vi.fn(actual.extractText),
+    getDocumentProxy: vi.fn(actual.getDocumentProxy),
   };
 });
 
@@ -45,6 +46,32 @@ async function createPdf(pageTexts: string[]): Promise<Uint8Array> {
   }
 
   return new Uint8Array(await pdf.save());
+}
+
+/**
+ * Wraps the next real `getDocumentProxy` call so the returned document's
+ * loading-task teardown can be observed.
+ */
+function trackLoadingTaskDestroy() {
+  const original = vi.mocked(getDocumentProxy).getMockImplementation();
+
+  if (!original) {
+    throw new Error('getDocumentProxy mock has no implementation.');
+  }
+
+  let destroySpy: ReturnType<typeof vi.spyOn> | undefined;
+
+  vi.mocked(getDocumentProxy).mockImplementationOnce(async (data, options) => {
+    const pdf = await original(data, options);
+    destroySpy = vi.spyOn(pdf.loadingTask, 'destroy');
+    return pdf;
+  });
+
+  return {
+    get destroySpy() {
+      return destroySpy;
+    },
+  };
 }
 
 async function expectAppError(
@@ -178,6 +205,24 @@ describe('extractPdfPages', () => {
     }
   });
 
+  it('contains no real-world contact data or other company names', async () => {
+    const { pages } = await extractPdfPages(await readFixture(), {
+      maxPages: 12,
+    });
+    const documentText = pages.map((page) => page.text).join('\n');
+
+    expect(documentText).toMatch(/\bPT Contoh Sejahtera\b/);
+    expect(documentText).not.toMatch(
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+    );
+    expect(documentText).not.toMatch(/https?:\/\//i);
+    expect(documentText).not.toMatch(/\+?\d[\d\s-]{7,}\d/);
+    expect(documentText).not.toMatch(/\b(?:Jalan|Jl)\.?\s+[A-Z]/i);
+    expect(documentText).not.toMatch(
+      /\b(?:PT|CV)\s+(?!Contoh\b)[A-Z][A-Za-z]+/,
+    );
+  });
+
   it('rejects a PDF with more pages than maxPages before extracting text', async () => {
     const bytes = await createPdf(['Halaman satu.', 'Halaman dua.', 'Halaman tiga.']);
     vi.mocked(extractText).mockClear();
@@ -212,11 +257,33 @@ describe('extractPdfPages', () => {
     expect(error.message).toBe(PDF_INVALID_MESSAGE);
   });
 
-  it('turns a hung text extraction into PDF_INVALID', async () => {
+  it('rejects a magic-valid but corrupt PDF', async () => {
+    const error = await expectAppError(
+      extractPdfPages(new TextEncoder().encode('%PDF-1.7\ngarbage'), {
+        maxPages: 10,
+      }),
+      'PDF_INVALID',
+    );
+
+    expect(error.message).toBe(PDF_INVALID_MESSAGE);
+  });
+
+  it('destroys the PDF loading task after a successful extraction', async () => {
+    const tracker = trackLoadingTaskDestroy();
+
+    await extractPdfPages(await readFixture(), { maxPages: 12 });
+
+    expect(tracker.destroySpy).toBeDefined();
+    expect(tracker.destroySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroys the loading task and rejects promptly on timeout', async () => {
+    const tracker = trackLoadingTaskDestroy();
     vi.mocked(extractText).mockImplementationOnce(
       () => new Promise<never>(() => {}),
     );
 
+    const startedAt = Date.now();
     const error = await expectAppError(
       extractPdfPages(await readFixture(), {
         maxPages: 12,
@@ -224,7 +291,10 @@ describe('extractPdfPages', () => {
       }),
       'PDF_INVALID',
     );
+    const elapsedMs = Date.now() - startedAt;
 
     expect(error.message).toBe(PDF_INVALID_MESSAGE);
+    expect(tracker.destroySpy).toHaveBeenCalledTimes(1);
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 });

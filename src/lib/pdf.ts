@@ -95,11 +95,15 @@ function withTimeout<T>(
   });
 }
 
-async function cleanupPdf(pdf: Awaited<ReturnType<typeof getDocumentProxy>>) {
+async function destroyPdf(
+  pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
+): Promise<void> {
   try {
-    await pdf.cleanup();
+    // `loadingTask.destroy()` aborts any in-flight extraction and tears down
+    // the transport. `cleanup()` alone would queue behind a running extraction.
+    await pdf.loadingTask.destroy();
   } catch {
-    // Cleanup is best-effort; the extraction result is already settled.
+    // Teardown is best-effort; the extraction outcome is already decided.
   }
 }
 
@@ -166,6 +170,6 @@ export async function extractPdfPages(
       })),
     };
   } finally {
-    await cleanupPdf(pdf);
+    await destroyPdf(pdf);
   }
 }

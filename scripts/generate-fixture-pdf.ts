@@ -33,7 +33,7 @@ const PAGES: FixturePage[] = [
     body: [
       '(Dokumen Fiktif untuk Pengujian)',
       'PT Contoh Sejahtera adalah perusahaan fiktif. Seluruh nama, kebijakan, dan angka dalam dokumen ini dibuat hanya untuk pengujian perangkat lunak dan tidak merujuk pada perusahaan, orang, atau alamat nyata.',
-      'Dokumen ini terdiri dari 12 halaman dan berlaku sejak 1 Januari 2026.',
+      `Dokumen ini terdiri dari ${TOTAL_PAGES} halaman dan berlaku sejak 1 Januari 2026.`,
     ],
   },
   {
