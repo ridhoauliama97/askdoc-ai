@@ -88,7 +88,7 @@ function documentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
     ingest_lock_until: null,
     created_at: '2026-11-22T11:30:00Z',
     updated_at: '2026-11-22T11:30:00Z',
-    expires_at: '2026-11-23T11:30:00Z',
+    expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     ...overrides,
   };
 }
@@ -133,6 +133,11 @@ describe('POST /api/documents/:id/ingest', () => {
       60,
     );
     expect(enforceGlobalQuota).toHaveBeenCalledWith(supabase, 'ingest', 1_000);
+    expect(
+      vi.mocked(getDocumentForSession).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(enforceGlobalQuota).mock.invocationCallOrder[0],
+    );
     expect(getDocumentForSession).toHaveBeenCalledWith(
       supabase,
       DOCUMENT_ID,
@@ -174,6 +179,7 @@ describe('POST /api/documents/:id/ingest', () => {
       { includeExpired: true },
     );
     expect(runIngestStep).not.toHaveBeenCalled();
+    expect(enforceGlobalQuota).not.toHaveBeenCalled();
   });
 
   it('returns 410 for an expired document the session owns', async () => {
@@ -188,6 +194,27 @@ describe('POST /api/documents/:id/ingest', () => {
       error: { code: 'DOC_EXPIRED' },
     });
     expect(runIngestStep).not.toHaveBeenCalled();
+    expect(enforceGlobalQuota).not.toHaveBeenCalled();
+  });
+
+  it('returns progress for a ready document without charging the global quota', async () => {
+    vi.mocked(getDocumentForSession).mockResolvedValue(
+      documentRow({ status: 'ready', page_count: 12, chunk_count: 30 }),
+    );
+    vi.mocked(runIngestStep).mockResolvedValue({
+      status: 'ready',
+      pageCount: 12,
+      totalChunks: 30,
+      embeddedChunks: 30,
+      remaining: 0,
+    });
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: 'ready' });
+    expect(runIngestStep).toHaveBeenCalled();
+    expect(enforceGlobalQuota).not.toHaveBeenCalled();
   });
 
   it('returns 409 INGEST_BUSY when another tab holds the lock', async () => {
@@ -259,7 +286,7 @@ describe('POST /api/documents/:id/ingest', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'GLOBAL_LIMIT_REACHED', retryAfter: 3_600 },
     });
-    expect(getDocumentForSession).not.toHaveBeenCalled();
+    expect(getDocumentForSession).toHaveBeenCalled();
     expect(runIngestStep).not.toHaveBeenCalled();
   });
 

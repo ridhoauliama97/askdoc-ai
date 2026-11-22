@@ -49,7 +49,6 @@ export async function POST(
       INGEST_LIMIT,
       INGEST_WINDOW_SECONDS,
     );
-    await enforceGlobalQuota(supabase, 'ingest', env.GLOBAL_DAILY_INGEST_BATCHES);
 
     // includeExpired lets an owned but expired row return 410 instead of 404.
     const document = await getDocumentForSession(supabase, id, sessionId, {
@@ -62,6 +61,16 @@ export async function POST(
 
     if (isDocumentExpired(document)) {
       throw new AppError('DOC_EXPIRED', 410, EXPIRED_MESSAGE);
+    }
+
+    // Only statuses that can produce work consume the daily batch quota;
+    // 404s, 410s, and idempotent ready polls do not.
+    if (document.status !== 'ready' && document.status !== 'failed') {
+      await enforceGlobalQuota(
+        supabase,
+        'ingest',
+        env.GLOBAL_DAILY_INGEST_BATCHES,
+      );
     }
 
     const progress = await runIngestStep(createIngestDeps(supabase, env), {

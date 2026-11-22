@@ -77,8 +77,8 @@ export type IngestDeps = {
     documentId: string,
     sessionId: string,
   ) => Promise<DocumentRow | null>;
-  acquireLock: (documentId: string) => Promise<boolean>;
-  releaseLock: (documentId: string) => Promise<void>;
+  acquireLock: (documentId: string) => Promise<string | null>;
+  releaseLock: (documentId: string, token: string) => Promise<void>;
   downloadFile: (storagePath: string) => Promise<Uint8Array>;
   listChunks: (documentId: string) => Promise<{ id: number }[]>;
   insertChunks: (documentId: string, chunks: DocumentChunk[]) => Promise<void>;
@@ -96,6 +96,7 @@ export type IngestDeps = {
   ) => Promise<void>;
   countChunks: (
     documentId: string,
+    fallbackChunkCount: number,
   ) => Promise<{ totalChunks: number; embeddedChunks: number }>;
   env: IngestEnvLimits;
   extractPdfPages: (
@@ -137,7 +138,7 @@ async function runExtractionStep(
   if (existingChunks.length > 0) {
     // The previous request inserted chunks but died before setting the status.
     // Skipping re-extraction keeps this resume path idempotent.
-    const counts = await deps.countChunks(documentId);
+    const counts = await deps.countChunks(documentId, document.chunk_count);
 
     await deps.updateDocument(documentId, {
       status: 'embedding',
@@ -164,6 +165,13 @@ async function runExtractionStep(
     const extraction = await deps.extractPdfPages(bytes, {
       maxPages: deps.env.MAX_PDF_PAGES,
     });
+
+    // Persist the page count before chunking/inserting so a crash between
+    // steps can still be repaired without re-parsing the PDF.
+    await deps.updateDocument(documentId, {
+      page_count: extraction.totalPages,
+    });
+
     const chunks = await deps.chunkPages(extraction.pages, {
       maxChunks: deps.env.MAX_CHUNKS_PER_DOC,
     });
@@ -175,7 +183,7 @@ async function runExtractionStep(
       chunk_count: chunks.length,
     });
 
-    const counts = await deps.countChunks(documentId);
+    const counts = await deps.countChunks(documentId, chunks.length);
 
     return buildProgress('embedding', extraction.totalPages, counts);
   } catch (error) {
@@ -219,7 +227,7 @@ async function runEmbeddingStep(
     );
   }
 
-  const counts = await deps.countChunks(documentId);
+  const counts = await deps.countChunks(documentId, document.chunk_count);
   const remaining = Math.max(0, counts.totalChunks - counts.embeddedChunks);
   const status: DocumentStatus = remaining === 0 ? 'ready' : 'embedding';
 
@@ -253,14 +261,14 @@ export async function runIngestStep(
   }
 
   if (status === 'ready') {
-    const counts = await deps.countChunks(documentId);
+    const counts = await deps.countChunks(documentId, document.chunk_count);
 
     return buildProgress('ready', document.page_count, counts);
   }
 
-  const acquired = await deps.acquireLock(documentId);
+  const lockToken = await deps.acquireLock(documentId);
 
-  if (!acquired) {
+  if (!lockToken) {
     throw new AppError('INGEST_BUSY', 409, INGEST_BUSY_MESSAGE);
   }
 
@@ -271,7 +279,14 @@ export async function runIngestStep(
 
     return await runEmbeddingStep(deps, document);
   } finally {
-    await deps.releaseLock(documentId);
+    // Releasing is best-effort: the lease expires on its own, and a release
+    // failure must never turn a PDF/429 result into a 500. The token keeps a
+    // late request from clearing a lock another request acquired since.
+    try {
+      await deps.releaseLock(documentId, lockToken);
+    } catch {
+      console.error('Failed to release ingest lock.', { documentId });
+    }
   }
 }
 
@@ -309,14 +324,15 @@ export function createIngestDeps(
         throw internalError();
       }
 
-      return data !== null;
+      return data === null ? null : lockUntil;
     },
 
-    releaseLock: async (documentId) => {
+    releaseLock: async (documentId, token) => {
       const { error } = await supabase
         .from('rag_documents')
         .update({ ingest_lock_until: null })
-        .eq('id', documentId);
+        .eq('id', documentId)
+        .eq('ingest_lock_until', token);
 
       if (error) {
         throw internalError();
@@ -416,8 +432,10 @@ export function createIngestDeps(
       }
     },
 
-    countChunks: (documentId) =>
-      getChunkProgress(supabase, documentId, { chunk_count: 0 }),
+    countChunks: (documentId, fallbackChunkCount) =>
+      getChunkProgress(supabase, documentId, {
+        chunk_count: fallbackChunkCount,
+      }),
 
     env,
     extractPdfPages: (bytes, opts) => extractPdfPages(bytes, opts),
